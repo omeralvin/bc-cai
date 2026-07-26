@@ -1,0 +1,93 @@
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   // "admin" | "operator"
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Participant {
+  id          String       @id
+  name        String
+  age         Int?
+  gender      String       // "L" | "P"
+  group       String
+  origin      String
+  isCheckedIn Boolean      @default(false)
+  checkInTime DateTime?
+  scannedBy   String?
+  rfidCardId  String?      @unique
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  logs        CheckInLog[]
+}
+
+model AttendanceSession {
+  id            String   @id @default(uuid())
+  dayName       String   // "Jumat", "Sabtu", "Minggu"
+  date          DateTime // tanggal pelaksanaan
+  sessionNumber Int      // 1..5
+  startTime     String   // "07:30" (HH:mm)
+  endTime       String   // "09:00" (HH:mm)
+  name          String   // "Materi Pembahasan 1"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  logs          CheckInLog[]
+
+  @@unique([dayName, date, sessionNumber])
+}
+
+model FgdMinute {
+  id                     String   @id @default(uuid())
+  groupNumber            Int
+  sessionName            String   @default("Sesi 1")
+  authorName             String?
+  usulanPermasalahan     String   @default("")
+  problem                String   @default("")
+  penyebab               String   @default("")
+  solusi                 String   @default("")
+  actionPlanBidangPpg    String   @default("")
+  actionPlanDeskripsi    String   @default("")
+  actionPlanNamaKegiatan String   @default("")
+  actionPlanPeserta      String   @default("")
+  actionPlanWaktu        String   @default("")
+  actionPlanDana         String   @default("")
+  peranKeimaman          String   @default("")
+  peranPengurus          String   @default("")
+  peranOrangTua          String   @default("")
+  peranMubaligh          String   @default("")
+  peranAhliPendidik      String   @default("")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([groupNumber, sessionName])
+}
+
+model CheckInLog {
+  id              String             @id @default(uuid())
+  participantId   String?
+  participantName String
+  group           String
+  timestamp       DateTime           @default(now())
+  operatorName    String
+  status          String             // "success" | "already_checked_in" | "error"
+  sessionId       String?
+  isLate          Boolean            @default(false)
+  lateDuration    Int?               // menit keterlambatan
+  participant     Participant?       @relation(fields: [participantId], references: [id], onDelete: SetNull)
+  session         AttendanceSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+}
