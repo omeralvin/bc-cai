@@ -10,6 +10,7 @@ export interface RfidCheckInResult {
 }
 
 const EARLY_BUFFER_MINUTES = 20;
+const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
 function subtractMinutes(timeStr: string, minutes: number): string {
   const [h, m] = timeStr.split(':').map(Number);
@@ -41,10 +42,16 @@ async function findActiveSession(explicitSessionId?: string | null): Promise<str
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(now);
   todayEnd.setHours(23, 59, 59, 999);
+  const currentDayName = DAY_NAMES[now.getDay()];
 
   const todaySessions = await prisma.attendanceSession.findMany({
-    where: { date: { gte: todayStart, lte: todayEnd } },
-    orderBy: { startTime: 'asc' },
+    where: {
+      OR: [
+        { date: { gte: todayStart, lte: todayEnd } },
+        { dayName: currentDayName },
+      ],
+    },
+    orderBy: [{ date: 'asc' }, { sessionNumber: 'asc' }],
   });
 
   const candidateSessions: { session: typeof todaySessions[number]; startDiff: number }[] = [];
