@@ -9,40 +9,43 @@ export interface RfidCheckInResult {
   log?: any;
 }
 
-const EARLY_BUFFER_MINUTES = 20;
+const GRACE_PERIOD_MINUTES = 30;
 const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
-function subtractMinutes(timeStr: string, minutes: number): string {
-  const [h, m] = timeStr.split(':').map(Number);
-  const totalMinutes = h * 60 + m - minutes;
-  const clamped = Math.max(0, totalMinutes);
-  return `${String(Math.floor(clamped / 60)).padStart(2, '0')}:${String(clamped % 60).padStart(2, '0')}`;
+function getWibTimeStr(): string {
+  const now = new Date();
+  const wib = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  return `${String(wib.getHours()).padStart(2, '0')}:${String(wib.getMinutes()).padStart(2, '0')}`;
 }
 
-function getCurrentTimeStr(date: Date): string {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+function getWibDayName(): string {
+  const now = new Date();
+  const wib = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+  return DAY_NAMES[wib.getDay()];
+}
+
+function getWibDate(): Date {
+  const now = new Date();
+  return new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
 }
 
 async function findActiveSession(explicitSessionId?: string | null): Promise<string | null> {
-  const now = new Date();
-  const currentTimeStr = getCurrentTimeStr(now);
-
+  // ── Path 1: Operator explicitly selected a session (trust their choice) ──
   if (explicitSessionId) {
     const session = await prisma.attendanceSession.findUnique({ where: { id: explicitSessionId } });
     if (!session) return null;
-
-    const openTime = subtractMinutes(session.startTime, EARLY_BUFFER_MINUTES);
-    if (openTime <= currentTimeStr && currentTimeStr <= session.endTime) {
-      return session.id;
-    }
-    return null;
+    return session.id;
   }
 
-  const todayStart = new Date(now);
+  // ── Path 2: No session selected — auto-detect from today's sessions ──
+  const wibDate = getWibDate();
+  const currentTimeStr = getWibTimeStr();
+  const currentDayName = getWibDayName();
+
+  const todayStart = new Date(wibDate);
   todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
+  const todayEnd = new Date(wibDate);
   todayEnd.setHours(23, 59, 59, 999);
-  const currentDayName = DAY_NAMES[now.getDay()];
 
   const todaySessions = await prisma.attendanceSession.findMany({
     where: {
@@ -57,11 +60,16 @@ async function findActiveSession(explicitSessionId?: string | null): Promise<str
   const candidateSessions: { session: typeof todaySessions[number]; startDiff: number }[] = [];
 
   for (const session of todaySessions) {
-    const openTime = subtractMinutes(session.startTime, EARLY_BUFFER_MINUTES);
-    if (openTime <= currentTimeStr && currentTimeStr <= session.endTime) {
-      const [sh, sm] = session.startTime.split(':').map(Number);
-      const [ch, cm] = currentTimeStr.split(':').map(Number);
-      const startDiff = Math.abs((sh * 60 + sm) - (ch * 60 + cm));
+    const [sh, sm] = session.startTime.split(':').map(Number);
+    const [eh, em] = session.endTime.split(':').map(Number);
+    const startMinutes = sh * 60 + sm;
+    const endMinutes = eh * 60 + em;
+    const graceStart = Math.max(0, startMinutes - GRACE_PERIOD_MINUTES);
+    const [ch, cm] = currentTimeStr.split(':').map(Number);
+    const currentMinutes = ch * 60 + cm;
+
+    if (currentMinutes >= graceStart && currentMinutes <= endMinutes) {
+      const startDiff = Math.abs(startMinutes - currentMinutes);
       candidateSessions.push({ session, startDiff });
     }
   }
@@ -74,15 +82,16 @@ async function findActiveSession(explicitSessionId?: string | null): Promise<str
 }
 
 function computeLateStatus(checkInTime: Date, sessionStartTime: string): { isLate: boolean; lateDuration: number | null } {
+  const wib = new Date(checkInTime.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
   const [hours, minutes] = sessionStartTime.split(':').map(Number);
-  const sessionStart = new Date(checkInTime);
+  const sessionStart = new Date(wib);
   sessionStart.setHours(hours, minutes, 0, 0);
 
-  if (checkInTime <= sessionStart) {
+  if (wib <= sessionStart) {
     return { isLate: false, lateDuration: null };
   }
 
-  const diffMs = checkInTime.getTime() - sessionStart.getTime();
+  const diffMs = wib.getTime() - sessionStart.getTime();
   const lateDuration = Math.ceil(diffMs / (1000 * 60));
 
   return { isLate: true, lateDuration };
