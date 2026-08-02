@@ -103,6 +103,27 @@ interface CheckInResult {
   duplicate?: boolean;
 }
 
+/** Cari peserta berdasarkan serial RFID (dengan fallback huruf besar) lalu ID Peserta. */
+async function resolveParticipantByRfidOrId(value: string): Promise<any> {
+  let participant = await prisma.participant.findUnique({
+    where: { rfidCardId: value },
+  });
+
+  if (!participant && value !== value.toUpperCase()) {
+    participant = await prisma.participant.findUnique({
+      where: { rfidCardId: value.toUpperCase() },
+    });
+  }
+
+  if (!participant) {
+    participant = await prisma.participant.findUnique({
+      where: { id: value.toUpperCase() },
+    });
+  }
+
+  return participant;
+}
+
 async function checkInForSession(
   participantId: string,
   participantName: string,
@@ -111,9 +132,13 @@ async function checkInForSession(
   operatorName: string,
   timestamp: Date
 ): Promise<CheckInResult> {
-  const existingLog = await prisma.checkInLog.findFirst({
-    where: { participantId, sessionId: resolvedSessionId, status: { in: ['PRESENT', 'LATE'] } },
-  });
+  // Jalankan kedua pembacaan paralel: pengecekan duplikat + info sesi.
+  const [existingLog, session] = await Promise.all([
+    prisma.checkInLog.findFirst({
+      where: { participantId, sessionId: resolvedSessionId, status: { in: ['PRESENT', 'LATE'] } },
+    }),
+    prisma.attendanceSession.findUnique({ where: { id: resolvedSessionId } }),
+  ]);
 
   if (existingLog) {
     return {
@@ -123,7 +148,6 @@ async function checkInForSession(
     };
   }
 
-  const session = await prisma.attendanceSession.findUnique({ where: { id: resolvedSessionId } });
   const { isLate, lateDuration } = session
     ? computeLateStatus(timestamp, session.startTime)
     : { isLate: false, lateDuration: null };
@@ -169,23 +193,11 @@ export const handleRfidCheckIn = async (
     return { success: false, message: 'Serial kartu RFID kosong!' };
   }
 
-  let participant = await prisma.participant.findUnique({
-    where: { rfidCardId: trimmedRfid },
-  });
-
-  if (!participant && trimmedRfid !== trimmedRfid.toUpperCase()) {
-    participant = await prisma.participant.findUnique({
-      where: { rfidCardId: trimmedRfid.toUpperCase() },
-    });
-  }
-
-  // Fallback ID Peserta: QR Code yang berisi ID Peserta (saat RFID belum dipasang)
-  // tetap bisa absen lewat jalur yang sama — QR menjadi alternatif kartu RFID.
-  if (!participant) {
-    participant = await prisma.participant.findUnique({
-      where: { id: trimmedRfid.toUpperCase() },
-    });
-  }
+  // Resolusi peserta & sesi berjalan paralel untuk mempercepat proses tap.
+  const [participant, resolvedSessionId] = await Promise.all([
+    resolveParticipantByRfidOrId(trimmedRfid),
+    findActiveSession(sessionId),
+  ]);
 
   if (!participant) {
     return {
@@ -193,9 +205,6 @@ export const handleRfidCheckIn = async (
       message: `Kartu/QR "${trimmedRfid}" tidak terdaftar!`,
     };
   }
-
-  const timestamp = new Date();
-  const resolvedSessionId = await findActiveSession(sessionId);
 
   if (!resolvedSessionId) {
     return {
@@ -207,7 +216,7 @@ export const handleRfidCheckIn = async (
   try {
     const result = await checkInForSession(
       participant.id, participant.name, participant.group,
-      resolvedSessionId, operatorName, timestamp
+      resolvedSessionId, operatorName, new Date()
     );
 
     if (result.duplicate) {
@@ -253,7 +262,6 @@ export const handleParticipantCheckIn = async (
     };
   }
 
-  const timestamp = new Date();
   const resolvedSessionId = await findActiveSession(sessionId);
 
   if (!resolvedSessionId) {
@@ -266,7 +274,7 @@ export const handleParticipantCheckIn = async (
   try {
     const result = await checkInForSession(
       participant.id, participant.name, participant.group,
-      resolvedSessionId, operatorName, timestamp
+      resolvedSessionId, operatorName, new Date()
     );
 
     if (result.duplicate) {
