@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import prisma from '../prisma';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { ParticipantCategory, getParticipantCategory } from '../utils/participantCategory';
 
 export interface RfidCheckInResult {
   success: boolean;
@@ -101,6 +102,9 @@ interface CheckInResult {
   participant: any;
   log: any;
   duplicate?: boolean;
+  /** true bila absensi ditolak karena sesi khusus (audience) tidak sesuai kategori. */
+  restricted?: boolean;
+  reason?: string;
 }
 
 /** Cari peserta berdasarkan serial RFID (dengan fallback huruf besar) lalu ID Peserta. */
@@ -128,6 +132,7 @@ async function checkInForSession(
   participantId: string,
   participantName: string,
   participantGroup: string,
+  category: ParticipantCategory,
   resolvedSessionId: string,
   operatorName: string,
   timestamp: Date
@@ -139,6 +144,26 @@ async function checkInForSession(
     }),
     prisma.attendanceSession.findUnique({ where: { id: resolvedSessionId } }),
   ]);
+
+  // ── Pembatasan berdasarkan kategori: sesi khusus (audience) ──
+  if (session && session.audience && session.audience !== 'ALL') {
+    if (session.audience === 'PESERTA' && category === 'PANITIA') {
+      return {
+        participant: { id: participantId, category },
+        log: null,
+        restricted: true,
+        reason: `Sesi ini khusus Peserta. Panitia (${participantName}) tidak perlu absen di sesi ini.`,
+      };
+    }
+    if (session.audience === 'PANITIA' && category === 'PESERTA') {
+      return {
+        participant: { id: participantId, category },
+        log: null,
+        restricted: true,
+        reason: `Sesi ini khusus Panitia. Peserta ${participantName} tidak dapat absen di sesi ini.`,
+      };
+    }
+  }
 
   if (existingLog) {
     return {
@@ -167,6 +192,7 @@ async function checkInForSession(
         participantId,
         participantName,
         group: participantGroup,
+        category,
         timestamp,
         operatorName,
         status: isLate ? 'LATE' : 'PRESENT',
@@ -213,11 +239,17 @@ export const handleRfidCheckIn = async (
     };
   }
 
+  const category = getParticipantCategory(participant.origin);
+
   try {
     const result = await checkInForSession(
-      participant.id, participant.name, participant.group,
+      participant.id, participant.name, participant.group, category,
       resolvedSessionId, operatorName, new Date()
     );
+
+    if (result.restricted) {
+      return { success: false, message: result.reason ?? 'Absensi ditolak untuk sesi ini.', participant: result.participant };
+    }
 
     if (result.duplicate) {
       const existingTime = new Date(result.log.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
@@ -271,11 +303,17 @@ export const handleParticipantCheckIn = async (
     };
   }
 
+  const category = getParticipantCategory(participant.origin);
+
   try {
     const result = await checkInForSession(
-      participant.id, participant.name, participant.group,
+      participant.id, participant.name, participant.group, category,
       resolvedSessionId, operatorName, new Date()
     );
+
+    if (result.restricted) {
+      return { success: false, message: result.reason ?? 'Absensi ditolak untuk sesi ini.', participant: result.participant };
+    }
 
     if (result.duplicate) {
       const existingTime = new Date(result.log.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });

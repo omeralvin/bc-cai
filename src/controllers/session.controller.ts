@@ -17,7 +17,7 @@ export const getSessions = async (req: AuthenticatedRequest, res: Response) => {
 
 export const upsertSession = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { dayName, date, sessionNumber, startTime, endTime, name } = req.body;
+    const { dayName, date, sessionNumber, startTime, endTime, name, audience } = req.body;
 
     if (!date || !startTime || !endTime || !name) {
       return res.status(400).json({ message: 'Missing required fields: date, startTime, endTime, name' });
@@ -26,6 +26,9 @@ export const upsertSession = async (req: AuthenticatedRequest, res: Response) =>
     const sessionDate = new Date(date);
 
     const resolvedDayName = dayName || DAY_NAMES[sessionDate.getDay()];
+
+    const resolvedAudience: string =
+      audience === 'PESERTA' || audience === 'PANITIA' || audience === 'ALL' ? audience : 'ALL';
 
     let resolvedSessionNumber = sessionNumber;
     if (!resolvedSessionNumber) {
@@ -55,6 +58,7 @@ export const upsertSession = async (req: AuthenticatedRequest, res: Response) =>
         startTime,
         endTime,
         name: name.trim(),
+        audience: resolvedAudience,
       },
       create: {
         dayName: resolvedDayName,
@@ -63,6 +67,7 @@ export const upsertSession = async (req: AuthenticatedRequest, res: Response) =>
         startTime,
         endTime,
         name: name.trim(),
+        audience: resolvedAudience,
       },
     });
 
@@ -75,7 +80,7 @@ export const upsertSession = async (req: AuthenticatedRequest, res: Response) =>
 export const updateSession = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { dayName, date, sessionNumber, startTime, endTime, name } = req.body;
+    const { dayName, date, sessionNumber, startTime, endTime, name, audience } = req.body;
 
     const existing = await prisma.attendanceSession.findUnique({ where: { id } });
     if (!existing) {
@@ -84,6 +89,9 @@ export const updateSession = async (req: AuthenticatedRequest, res: Response) =>
 
     const sessionDate = date ? new Date(date) : existing.date;
     const resolvedDayName = dayName || DAY_NAMES[sessionDate.getDay()];
+
+    const resolvedAudience: string =
+      audience === 'PESERTA' || audience === 'PANITIA' || audience === 'ALL' ? audience : (existing.audience || 'ALL');
 
     const updated = await prisma.attendanceSession.update({
       where: { id },
@@ -94,6 +102,7 @@ export const updateSession = async (req: AuthenticatedRequest, res: Response) =>
         startTime: startTime || existing.startTime,
         endTime: endTime || existing.endTime,
         name: name ? name.trim() : existing.name,
+        audience: resolvedAudience,
       },
     });
 

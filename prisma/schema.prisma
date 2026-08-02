@@ -26,7 +26,8 @@ model Participant {
   age         Int?
   gender      String       // "L" | "P"
   group       String
-  origin      String
+  origin      String               // keterangan / jabatan spesifik
+  category    String       @default("PESERTA") // "PESERTA" | "PANITIA"
   isCheckedIn Boolean      @default(false)
   checkInTime DateTime?
   scannedBy   String?
@@ -44,6 +45,7 @@ model AttendanceSession {
   startTime     String   // "07:30" (HH:mm)
   endTime       String   // "09:00" (HH:mm)
   name          String   // "Materi Pembahasan 1"
+  audience      String   @default("ALL") // "ALL" | "PESERTA" | "PANITIA"
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   logs          CheckInLog[]
@@ -82,6 +84,7 @@ model CheckInLog {
   participantId   String?
   participantName String
   group           String
+  category        String             @default("PESERTA") // "PESERTA" | "PANITIA"
   timestamp       DateTime           @default(now())
   operatorName    String
   status          String             // "success" | "already_checked_in" | "error"

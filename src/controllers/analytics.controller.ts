@@ -3,6 +3,9 @@ import prisma from '../prisma';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import PDFDocument from 'pdfkit';
 
+// Panitia dikecualikan dari perhitungan statistik kehadiran.
+const PESERTA_ONLY = { category: 'PESERTA' };
+
 export const getDashboard = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { sessionId } = req.query;
@@ -29,16 +32,16 @@ export const getDashboard = async (req: AuthenticatedRequest, res: Response) => 
       return res.status(404).json({ message: 'Belum ada sesi absensi yang dibuat.' });
     }
 
-    const totalParticipants = await prisma.participant.count();
+    const totalParticipants = await prisma.participant.count({ where: PESERTA_ONLY });
 
     const presentLogs = await prisma.checkInLog.findMany({
-      where: { sessionId: session.id, status: { in: ['PRESENT', 'LATE'] } },
+      where: { sessionId: session.id, status: { in: ['PRESENT', 'LATE'] }, ...PESERTA_ONLY },
     });
     const present = presentLogs.length;
     const absent = totalParticipants - present;
 
     const lateLogs = await prisma.checkInLog.findMany({
-      where: { sessionId: session.id, isLate: true },
+      where: { sessionId: session.id, isLate: true, ...PESERTA_ONLY },
       orderBy: { lateDuration: 'desc' },
       include: { participant: true },
     });
@@ -53,7 +56,7 @@ export const getDashboard = async (req: AuthenticatedRequest, res: Response) => 
         timestamp: log.timestamp,
       }));
 
-    const participants = await prisma.participant.findMany();
+    const participants = await prisma.participant.findMany({ where: PESERTA_ONLY });
     const groupMap = new Map<string, { total: number; presentCount: number; lateCount: number }>();
 
     for (const p of participants) {
@@ -125,8 +128,8 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ message: 'No sessions found' });
     }
 
-    const totalParticipants = await prisma.participant.count();
-    const allParticipants = await prisma.participant.findMany();
+    const totalParticipants = await prisma.participant.count({ where: PESERTA_ONLY });
+    const allParticipants = await prisma.participant.findMany({ where: PESERTA_ONLY });
 
     const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
     const chunks: Buffer[] = [];
@@ -178,13 +181,13 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
 
       // ── Summary ──
       const presentLogs = await prisma.checkInLog.findMany({
-        where: { sessionId: session.id, status: { in: ['PRESENT', 'LATE'] } },
+        where: { sessionId: session.id, status: { in: ['PRESENT', 'LATE'] }, ...PESERTA_ONLY },
       });
       const present = presentLogs.length;
       const absent = totalParticipants - present;
 
       const lateLogs = await prisma.checkInLog.findMany({
-        where: { sessionId: session.id, isLate: true },
+        where: { sessionId: session.id, isLate: true, ...PESERTA_ONLY },
         orderBy: { lateDuration: 'desc' },
         include: { participant: true },
       });

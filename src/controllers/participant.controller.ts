@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import prisma from '../prisma';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { getParticipantCategory } from '../utils/participantCategory';
 
 export const getParticipants = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -50,6 +51,7 @@ export const createParticipant = async (req: AuthenticatedRequest, res: Response
         gender,
         group: group.trim(),
         origin: origin.trim(),
+        category: getParticipantCategory(origin.trim()),
         rfidCardId: rfidCardId && rfidCardId.trim() ? rfidCardId.trim().toUpperCase() : null,
         isCheckedIn: false,
         checkInTime: null,
@@ -87,6 +89,8 @@ export const updateParticipant = async (req: AuthenticatedRequest, res: Response
       }
     }
 
+    const resolvedOrigin = origin !== undefined ? origin.trim() : participant.origin;
+
     const updated = await prisma.participant.update({
       where: { id },
       data: {
@@ -94,7 +98,8 @@ export const updateParticipant = async (req: AuthenticatedRequest, res: Response
         age: age !== undefined ? age : participant.age,
         gender: gender !== undefined ? gender : participant.gender,
         group: group !== undefined ? group.trim() : participant.group,
-        origin: origin !== undefined ? origin.trim() : participant.origin,
+        origin: resolvedOrigin,
+        category: getParticipantCategory(resolvedOrigin),
         isCheckedIn: isCheckedIn !== undefined ? isCheckedIn : participant.isCheckedIn,
         checkInTime: checkInTime !== undefined ? (checkInTime ? new Date(checkInTime) : null) : participant.checkInTime,
         scannedBy: scannedBy !== undefined ? scannedBy : participant.scannedBy,
@@ -170,6 +175,7 @@ export const importParticipants = async (req: AuthenticatedRequest, res: Respons
             gender: item.gender || 'L',
             group: item.group ? item.group.trim() : 'Umum',
             origin: item.origin ? item.origin.trim() : '-',
+            category: getParticipantCategory(item.origin ? item.origin.trim() : null),
             rfidCardId: rfid,
             isCheckedIn: false,
             checkInTime: null,
