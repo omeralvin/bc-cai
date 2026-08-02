@@ -179,10 +179,18 @@ export const handleRfidCheckIn = async (
     });
   }
 
+  // Fallback ID Peserta: QR Code yang berisi ID Peserta (saat RFID belum dipasang)
+  // tetap bisa absen lewat jalur yang sama — QR menjadi alternatif kartu RFID.
+  if (!participant) {
+    participant = await prisma.participant.findUnique({
+      where: { id: trimmedRfid.toUpperCase() },
+    });
+  }
+
   if (!participant) {
     return {
       success: false,
-      message: `Kartu RFID "${trimmedRfid}" tidak terdaftar!`,
+      message: `Kartu/QR "${trimmedRfid}" tidak terdaftar!`,
     };
   }
 
