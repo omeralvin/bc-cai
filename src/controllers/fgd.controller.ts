@@ -7,9 +7,51 @@ import fs from 'fs';
 
 // ─── FGD Themes (sesi : tema) — admin yang menentukan ───
 
+let themesEnsured = false;
+
+/**
+ * Buat otomatis tabel FgdTheme + isi sesi default (Sesi 1..5) bila belum ada.
+ * Dipakai agar backend yang di-deploy tidak perlu menjalankan `prisma migrate`
+ * secara manual dulu — tabel dibuat sendiri saat pertama kali dipakai.
+ */
+async function ensureFgdThemes(): Promise<void> {
+  if (themesEnsured) return;
+  try {
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "FgdTheme" (
+        "id" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "theme" TEXT NOT NULL DEFAULT '',
+        "order" INTEGER NOT NULL DEFAULT 0,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL,
+        CONSTRAINT "FgdTheme_pkey" PRIMARY KEY ("id")
+      );
+    `);
+    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "FgdTheme_name_key" ON "FgdTheme"("name");`);
+    const count = await prisma.fgdTheme.count();
+    if (count === 0) {
+      await prisma.fgdTheme.createMany({
+        data: [1, 2, 3, 4, 5].map(i => ({
+          id: `fgd-sesi-${i}`,
+          name: `Sesi ${i}`,
+          theme: '',
+          order: i,
+          updatedAt: new Date(),
+        })),
+      });
+    }
+    themesEnsured = true;
+  } catch (error: any) {
+    // Mesin database mungkin belum punya FgdTheme; biarkan findMany menangani error nyata.
+    console.warn('[FgdThemes] ensure schema warning:', error?.message);
+  }
+}
+
 /** Public: daftar tema sesi FGD untuk form publik / dropdown. */
 export const getFgdThemes = async (_req: any, res: Response) => {
   try {
+    await ensureFgdThemes();
     const themes = await prisma.fgdTheme.findMany({ orderBy: { order: 'asc' } });
     return res.status(200).json(themes);
   } catch (error: any) {
@@ -19,6 +61,7 @@ export const getFgdThemes = async (_req: any, res: Response) => {
 
 export const createFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await ensureFgdThemes();
     const { name, theme = '', order } = req.body;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: 'Nama sesi wajib diisi!' });
@@ -40,6 +83,7 @@ export const createFgdTheme = async (req: AuthenticatedRequest, res: Response) =
 
 export const updateFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await ensureFgdThemes();
     const { id } = req.params;
     const { name, theme, order } = req.body;
     const data: any = {};
@@ -60,6 +104,7 @@ export const updateFgdTheme = async (req: AuthenticatedRequest, res: Response) =
 
 export const deleteFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
   try {
+    await ensureFgdThemes();
     const { id } = req.params;
     await prisma.fgdTheme.delete({ where: { id } });
     return res.status(200).json({ message: 'Tema sesi berhasil dihapus' });
