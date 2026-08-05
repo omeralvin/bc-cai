@@ -7,10 +7,20 @@ import {
   updateNotulis,
   deleteNotulis,
   exportPdf,
+  getFgdThemes,
+  createFgdTheme,
+  updateFgdTheme,
+  deleteFgdTheme,
 } from '../controllers/fgd.controller';
 import { authenticateJWT } from '../middlewares/auth.middleware';
 
 const router = Router();
+
+// FGD Themes — public read (form publik), admin manage
+router.get('/themes', getFgdThemes);
+router.post('/themes', authenticateJWT, createFgdTheme);
+router.put('/themes/:id', authenticateJWT, updateFgdTheme);
+router.delete('/themes/:id', authenticateJWT, deleteFgdTheme);
 
 router.post('/', upsertNotulis);
 router.get('/group/:groupNumber', getByGroup);

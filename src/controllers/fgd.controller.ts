@@ -5,6 +5,69 @@ import PDFDocument from 'pdfkit';
 import path from 'path';
 import fs from 'fs';
 
+// ─── FGD Themes (sesi : tema) — admin yang menentukan ───
+
+/** Public: daftar tema sesi FGD untuk form publik / dropdown. */
+export const getFgdThemes = async (_req: any, res: Response) => {
+  try {
+    const themes = await prisma.fgdTheme.findMany({ orderBy: { order: 'asc' } });
+    return res.status(200).json(themes);
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+};
+
+export const createFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { name, theme = '', order } = req.body;
+    if (!name || !String(name).trim()) {
+      return res.status(400).json({ message: 'Nama sesi wajib diisi!' });
+    }
+    const trimmedName = String(name).trim();
+    const exists = await prisma.fgdTheme.findUnique({ where: { name: trimmedName } });
+    if (exists) {
+      return res.status(400).json({ message: `Sesi "${trimmedName}" sudah ada!` });
+    }
+    const maxOrder = await prisma.fgdTheme.aggregate({ _max: { order: true } });
+    const result = await prisma.fgdTheme.create({
+      data: { name: trimmedName, theme: String(theme), order: Number(order) || (maxOrder._max.order ?? 0) + 1 },
+    });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+};
+
+export const updateFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, theme, order } = req.body;
+    const data: any = {};
+    if (typeof name === 'string' && name.trim()) {
+      const trimmedName = name.trim();
+      const clash = await prisma.fgdTheme.findFirst({ where: { name: trimmedName, NOT: { id } } });
+      if (clash) return res.status(400).json({ message: `Sesi "${trimmedName}" sudah ada!` });
+      data.name = trimmedName;
+    }
+    if (typeof theme === 'string') data.theme = theme;
+    if (typeof order === 'number') data.order = order;
+    const result = await prisma.fgdTheme.update({ where: { id }, data });
+    return res.status(200).json(result);
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+};
+
+export const deleteFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    await prisma.fgdTheme.delete({ where: { id } });
+    return res.status(200).json({ message: 'Tema sesi berhasil dihapus' });
+  } catch (error: any) {
+    return res.status(500).json({ message: 'Internal server error', error: error.message });
+  }
+};
+
 export const upsertNotulis = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { groupNumber, sessionName = 'Sesi 1', ...data } = req.body;
