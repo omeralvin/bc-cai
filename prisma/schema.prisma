@@ -54,12 +54,13 @@ model AttendanceSession {
 }
 
 model FgdTheme {
-  id        String   @id @default(uuid())
-  name      String   @unique // "Sesi 1", "Sesi 2", ...
-  theme     String   @default("") // tema / materi sesi
-  order     Int      @default(0) // urutan tampil
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String   @unique // "Sesi 1", "Sesi 2", ...
+  theme        String   @default("") // tema / materi sesi
+  order        Int      @default(0) // urutan tampil
+  timerMinutes Int      @default(10) // durasi presentasi layar (menit)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model FgdMinute {

@@ -23,12 +23,14 @@ async function ensureFgdThemes(): Promise<void> {
         "name" TEXT NOT NULL,
         "theme" TEXT NOT NULL DEFAULT '',
         "order" INTEGER NOT NULL DEFAULT 0,
+        "timerMinutes" INTEGER NOT NULL DEFAULT 10,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL,
         CONSTRAINT "FgdTheme_pkey" PRIMARY KEY ("id")
       );
     `);
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "FgdTheme_name_key" ON "FgdTheme"("name");`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "FgdTheme" ADD COLUMN IF NOT EXISTS "timerMinutes" INTEGER NOT NULL DEFAULT 10;`);
     const count = await prisma.fgdTheme.count();
     if (count === 0) {
       await prisma.fgdTheme.createMany({
@@ -37,6 +39,7 @@ async function ensureFgdThemes(): Promise<void> {
           name: `Sesi ${i}`,
           theme: '',
           order: i,
+          timerMinutes: 10,
           updatedAt: new Date(),
         })),
       });
@@ -62,7 +65,7 @@ export const getFgdThemes = async (_req: any, res: Response) => {
 export const createFgdTheme = async (req: AuthenticatedRequest, res: Response) => {
   try {
     await ensureFgdThemes();
-    const { name, theme = '', order } = req.body;
+    const { name, theme = '', order, timerMinutes } = req.body;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: 'Nama sesi wajib diisi!' });
     }
@@ -73,7 +76,12 @@ export const createFgdTheme = async (req: AuthenticatedRequest, res: Response) =
     }
     const maxOrder = await prisma.fgdTheme.aggregate({ _max: { order: true } });
     const result = await prisma.fgdTheme.create({
-      data: { name: trimmedName, theme: String(theme), order: Number(order) || (maxOrder._max.order ?? 0) + 1 },
+      data: {
+        name: trimmedName,
+        theme: String(theme),
+        order: Number(order) || (maxOrder._max.order ?? 0) + 1,
+        timerMinutes: Math.max(1, Math.min(600, Number(timerMinutes) || 10)),
+      },
     });
     return res.status(200).json(result);
   } catch (error: any) {
@@ -85,7 +93,7 @@ export const updateFgdTheme = async (req: AuthenticatedRequest, res: Response) =
   try {
     await ensureFgdThemes();
     const { id } = req.params;
-    const { name, theme, order } = req.body;
+    const { name, theme, order, timerMinutes } = req.body;
     const data: any = {};
     if (typeof name === 'string' && name.trim()) {
       const trimmedName = name.trim();
@@ -95,6 +103,7 @@ export const updateFgdTheme = async (req: AuthenticatedRequest, res: Response) =
     }
     if (typeof theme === 'string') data.theme = theme;
     if (typeof order === 'number') data.order = order;
+    if (typeof timerMinutes === 'number') data.timerMinutes = Math.max(1, Math.min(600, timerMinutes));
     const result = await prisma.fgdTheme.update({ where: { id }, data });
     return res.status(200).json(result);
   } catch (error: any) {

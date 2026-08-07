@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "FgdTheme" ADD COLUMN "timerMinutes" INTEGER NOT NULL DEFAULT 10;
