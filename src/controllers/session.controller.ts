@@ -107,22 +107,20 @@ export const updateSession = async (req: AuthenticatedRequest, res: Response) =>
       },
     });
 
-    // Saat Jam Masuk / Batas Toleransi berubah, hitung ulang status keterlambatan
-    // seluruh log absen sesi ini agar data terlambat tidak tertinggal (usang).
-    const resolvedStartTime = startTime || existing.startTime;
-    if (resolvedStartTime !== existing.startTime) {
-      const logs = await prisma.checkInLog.findMany({ where: { sessionId: id } });
-      for (const log of logs) {
-        const { isLate, lateDuration } = computeLateStatus(log.timestamp, resolvedStartTime);
-        await prisma.checkInLog.update({
-          where: { id: log.id },
-          data: {
-            isLate,
-            lateDuration,
-            status: isLate ? 'LATE' : 'PRESENT',
-          },
-        });
-      }
+    // Hitung ulang status keterlambatan seluruh log absen sesi ini setiap kali
+    // sesi disimpan, agar data terlambat tidak tertinggal bila Jam Masuk / Batas
+    // Toleransi diubah (mis. ada yang seharusnya sudah tidak terlambat lagi).
+    const logs = await prisma.checkInLog.findMany({ where: { sessionId: id } });
+    for (const log of logs) {
+      const { isLate, lateDuration } = computeLateStatus(log.timestamp, updated.startTime);
+      await prisma.checkInLog.update({
+        where: { id: log.id },
+        data: {
+          isLate,
+          lateDuration,
+          status: isLate ? 'LATE' : 'PRESENT',
+        },
+      });
     }
 
     return res.status(200).json(updated);
