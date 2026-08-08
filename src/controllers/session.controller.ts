@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import prisma from '../prisma';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
+import { computeLateStatus } from '../utils/lateStatus';
 
 const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
@@ -105,6 +106,24 @@ export const updateSession = async (req: AuthenticatedRequest, res: Response) =>
         audience: resolvedAudience,
       },
     });
+
+    // Saat Jam Masuk / Batas Toleransi berubah, hitung ulang status keterlambatan
+    // seluruh log absen sesi ini agar data terlambat tidak tertinggal (usang).
+    const resolvedStartTime = startTime || existing.startTime;
+    if (resolvedStartTime !== existing.startTime) {
+      const logs = await prisma.checkInLog.findMany({ where: { sessionId: id } });
+      for (const log of logs) {
+        const { isLate, lateDuration } = computeLateStatus(log.timestamp, resolvedStartTime);
+        await prisma.checkInLog.update({
+          where: { id: log.id },
+          data: {
+            isLate,
+            lateDuration,
+            status: isLate ? 'LATE' : 'PRESENT',
+          },
+        });
+      }
+    }
 
     return res.status(200).json(updated);
   } catch (error: any) {

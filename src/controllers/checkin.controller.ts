@@ -2,6 +2,7 @@ import { Response } from 'express';
 import prisma from '../prisma';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware';
 import { ParticipantCategory, getParticipantCategory } from '../utils/participantCategory';
+import { computeLateStatus } from '../utils/lateStatus';
 
 export interface RfidCheckInResult {
   success: boolean;
@@ -80,22 +81,6 @@ async function findActiveSession(explicitSessionId?: string | null): Promise<str
 
   candidateSessions.sort((a, b) => a.startDiff - b.startDiff);
   return candidateSessions[0].session.id;
-}
-
-function computeLateStatus(checkInTime: Date, sessionStartTime: string): { isLate: boolean; lateDuration: number | null } {
-  const wib = new Date(checkInTime.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
-  const [hours, minutes] = sessionStartTime.split(':').map(Number);
-  const sessionStart = new Date(wib);
-  sessionStart.setHours(hours, minutes, 0, 0);
-
-  if (wib <= sessionStart) {
-    return { isLate: false, lateDuration: null };
-  }
-
-  const diffMs = wib.getTime() - sessionStart.getTime();
-  const lateDuration = Math.ceil(diffMs / (1000 * 60));
-
-  return { isLate: true, lateDuration };
 }
 
 interface CheckInResult {
