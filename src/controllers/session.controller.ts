@@ -5,6 +5,26 @@ import { computeLateStatus } from '../utils/lateStatus';
 
 const DAY_NAMES = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
 
+/**
+ * Hitung ulang status keterlambatan seluruh log absen sesi ini setiap kali
+ * sesi disimpan, agar data terlambat tidak tertinggal bila Jam Masuk diubah
+ * (mis. ada yang seharusnya sudah tidak terlambat lagi).
+ */
+async function recomputeSessionLateStatuses(sessionId: string, startTime: string) {
+  const logs = await prisma.checkInLog.findMany({ where: { sessionId } });
+  for (const log of logs) {
+    const { isLate, lateDuration } = computeLateStatus(log.timestamp, startTime);
+    await prisma.checkInLog.update({
+      where: { id: log.id },
+      data: {
+        isLate,
+        lateDuration,
+        status: isLate ? 'LATE' : 'PRESENT',
+      },
+    });
+  }
+}
+
 export const getSessions = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const sessions = await prisma.attendanceSession.findMany({
@@ -72,6 +92,9 @@ export const upsertSession = async (req: AuthenticatedRequest, res: Response) =>
       },
     });
 
+    // Rekomputasi ulang bila sesi yang sudah ada berubah jam mulainya.
+    await recomputeSessionLateStatuses(session.id, session.startTime);
+
     return res.status(200).json(session);
   } catch (error: any) {
     return res.status(500).json({ message: 'Internal server error', error: error.message });
@@ -110,18 +133,7 @@ export const updateSession = async (req: AuthenticatedRequest, res: Response) =>
     // Hitung ulang status keterlambatan seluruh log absen sesi ini setiap kali
     // sesi disimpan, agar data terlambat tidak tertinggal bila Jam Masuk / Batas
     // Toleransi diubah (mis. ada yang seharusnya sudah tidak terlambat lagi).
-    const logs = await prisma.checkInLog.findMany({ where: { sessionId: id } });
-    for (const log of logs) {
-      const { isLate, lateDuration } = computeLateStatus(log.timestamp, updated.startTime);
-      await prisma.checkInLog.update({
-        where: { id: log.id },
-        data: {
-          isLate,
-          lateDuration,
-          status: isLate ? 'LATE' : 'PRESENT',
-        },
-      });
-    }
+    await recomputeSessionLateStatuses(updated.id, updated.startTime);
 
     return res.status(200).json(updated);
   } catch (error: any) {
