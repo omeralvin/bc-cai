@@ -31,19 +31,6 @@ async function ensureFgdThemes(): Promise<void> {
     `);
     await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "FgdTheme_name_key" ON "FgdTheme"("name");`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "FgdTheme" ADD COLUMN IF NOT EXISTS "timerMinutes" INTEGER NOT NULL DEFAULT 10;`);
-    const count = await prisma.fgdTheme.count();
-    if (count === 0) {
-      await prisma.fgdTheme.createMany({
-        data: [1, 2, 3, 4, 5].map(i => ({
-          id: `fgd-sesi-${i}`,
-          name: `Sesi ${i}`,
-          theme: '',
-          order: i,
-          timerMinutes: 10,
-          updatedAt: new Date(),
-        })),
-      });
-    }
     themesEnsured = true;
   } catch (error: any) {
     // Mesin database mungkin belum punya FgdTheme; biarkan findMany menangani error nyata.
@@ -124,7 +111,7 @@ export const deleteFgdTheme = async (req: AuthenticatedRequest, res: Response) =
 
 export const upsertNotulis = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { groupNumber, sessionName = 'Sesi 1', ...data } = req.body;
+    const { groupNumber, sessionName, ...data } = req.body;
     if (!groupNumber || groupNumber < 1 || groupNumber > 15) {
       return res.status(400).json({ message: 'Group number must be between 1 and 15' });
     }

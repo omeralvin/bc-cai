@@ -162,11 +162,80 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
     const dateShort = (d: Date | string) =>
       new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
+    // Warna konsisten seperti export FGD.
+    const HEADER_BG = '#1d257a';
+    const ZEBRA_BG = '#eef2f7';
+    const TEXT_COLOR = '#1e293b';
+    const PAGE_W = doc.page.width;
+    const CONTENT_W = 515;
+    const TABLE_X = 40;
+
+    // Judul seksi: bar berwarna dengan teks putih (raptah seperti FGD).
+    const sectionTitle = (title: string) => {
+      ensureSpace(30);
+      const y = doc.y;
+      doc.rect(TABLE_X, y, CONTENT_W, 24).fill(HEADER_BG);
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#ffffff').text(title, TABLE_X + 8, y + 7);
+      doc.fillColor('#000000');
+      doc.y = y + 30;
+    };
+
+    // Tabel dengan header berwarna, baris zebra, teks kolom rata tengah.
+    const drawTable = (
+      headers: string[],
+      colWidths: number[],
+      rows: (string | number)[][],
+      firstColLeft = false,
+    ) => {
+      const totalW = colWidths.reduce((a, b) => a + b, 0);
+      const headerH = 20;
+      const rowH = 17;
+      let y = doc.y;
+
+      const drawHeader = () => {
+        doc.rect(TABLE_X, y, totalW, headerH).fill(HEADER_BG);
+        doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff');
+        let cx = TABLE_X;
+        for (let i = 0; i < headers.length; i++) {
+          doc.text(headers[i], cx, y + (headerH - 10) / 2, { width: colWidths[i], align: 'center' });
+          cx += colWidths[i];
+        }
+        doc.fillColor('#000000');
+        y += headerH;
+      };
+
+      drawHeader();
+
+      for (let r = 0; r < rows.length; r++) {
+        if (y + rowH > BOTTOM_LIMIT) {
+          doc.addPage();
+          y = TABLE_X;
+          drawHeader();
+        }
+        if (r % 2 === 1) {
+          doc.rect(TABLE_X, y, totalW, rowH).fill(ZEBRA_BG);
+        }
+        doc.font('Helvetica').fontSize(8.5);
+        let cx = TABLE_X;
+        for (let i = 0; i < rows[r].length; i++) {
+          doc.fillColor(TEXT_COLOR);
+          doc.text(String(rows[r][i]), cx, y + (rowH - 9) / 2, {
+            width: colWidths[i],
+            align: firstColLeft && i === 0 ? 'left' : 'center',
+          });
+          cx += colWidths[i];
+        }
+        y += rowH;
+      }
+      doc.fillColor('#000000');
+      doc.y = y + 8;
+    };
+
     // ── Cover Page ──
     if (hasLogo) {
-      doc.image(logoPath, 40, 40, { width: 60 });
-      doc.fontSize(22).font('Helvetica-Bold').text('Laporan Absensi CAI', 110, 48);
-      doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text('Cinta Alam Indonesia', 110, 76);
+      doc.image(logoPath, (PAGE_W - 60) / 2, 40, { width: 60 });
+      doc.fontSize(22).font('Helvetica-Bold').text('Laporan Absensi CAI', TABLE_X, 90, { align: 'center' });
+      doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text('Cinta Alam Indonesia', TABLE_X, 122, { align: 'center' });
       doc.fillColor('#000000');
     } else {
       doc.fontSize(22).font('Helvetica-Bold').text('Laporan Absensi CAI', { align: 'center' });
@@ -181,37 +250,48 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
     doc.text(`Dicetak: ${dateLong(now)} ${now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`, { align: 'center' });
     doc.moveDown(2);
 
-    // Session index list on cover
-    doc.fontSize(12).font('Helvetica-Bold').text('Daftar Sesi:', { align: 'left' });
-    doc.moveDown(0.5);
-    doc.fontSize(10).font('Helvetica');
-    sessionsToExport.forEach((s, i) => {
-      doc.text(`  ${i + 1}.  ${s.name}  —  ${s.dayName}, ${dateShort(s.date)}  (${s.startTime} — ${s.endTime})`);
-    });
+    // Daftar sesi di halaman sampul — tabel berwarna.
+    sectionTitle('DAFTAR SESI');
+    drawTable(
+      ['No', 'Nama Sesi', 'Hari / Tanggal', 'Jam'],
+      [30, 185, 170, 130],
+      sessionsToExport.map((s, i) => [
+        String(i + 1),
+        s.name || `Sesi ${s.sessionNumber}`,
+        `${s.dayName}, ${dateShort(s.date)}`,
+        `${s.startTime} — ${s.endTime}`,
+      ]),
+    );
     doc.moveDown(1);
 
     // ── Per-Session Pages ──
     for (let si = 0; si < sessionsToExport.length; si++) {
       const session = sessionsToExport[si];
       const dateStr = dateLong(session.date);
-      const sessionLabel = `Sesi ${si + 1}: ${session.name}  (${session.dayName}, ${dateStr})`;
+      const sessionLabel = `Sesi ${si + 1}: ${session.name}`;
 
       // Start each session on a new page
       doc.addPage();
 
-      // Header with logo
+      // Header dengan logo (judul di tengah)
       if (hasLogo) {
-        doc.image(logoPath, 40, 35, { width: 55 });
-        doc.fontSize(16).font('Helvetica-Bold').text(sessionLabel, 105, 40);
-        doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text('Cinta Alam Indonesia', 105, 62);
+        doc.image(logoPath, (PAGE_W - 55) / 2, 28, { width: 55 });
+        doc.fontSize(16).font('Helvetica-Bold').text(sessionLabel, TABLE_X, 66, { align: 'center' });
+        doc.fontSize(10).font('Helvetica').fillColor('#6b7280').text(
+          `Cinta Alam Indonesia — ${session.dayName}, ${dateStr}`,
+          TABLE_X,
+          90,
+          { align: 'center' },
+        );
         doc.fillColor('#000000');
       } else {
         doc.fontSize(16).font('Helvetica-Bold').text(sessionLabel, { align: 'center' });
       }
       doc.moveDown(3);
 
-      doc.fontSize(10).font('Helvetica').text(`Jam: ${session.startTime} — ${session.endTime}`);
-      doc.moveDown(0.8);
+      doc.fontSize(10).font('Helvetica').fillColor('#334155').text(`Jam: ${session.startTime} — ${session.endTime}`, { align: 'center' });
+      doc.fillColor('#000000');
+      doc.moveDown(1.5);
 
       // ── Data Sesi ──
       const presentLogs = await prisma.checkInLog.findMany({
@@ -228,14 +308,19 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
       const lateList = lateLogs.filter((l) => l.participant !== null);
 
       // ── Ringkasan ──
-      doc.fontSize(12).font('Helvetica-Bold').text('Ringkasan');
-      doc.moveDown(0.3);
-      doc.fontSize(10).font('Helvetica');
-      doc.text(`Total Peserta   : ${totalParticipants}`);
-      doc.text(`Hadir            : ${present}`);
-      doc.text(`Absen            : ${absent}`);
-      doc.text(`Terlambat        : ${lateList.length}`);
-      doc.moveDown(1);
+      sectionTitle('RINGKASAN KEHADIRAN');
+      drawTable(
+        ['Keterangan', 'Jumlah'],
+        [320, 195],
+        [
+          ['Total Peserta', totalParticipants],
+          ['Hadir', present],
+          ['Absen', absent],
+          ['Terlambat', lateList.length],
+        ],
+        true,
+      );
+      doc.moveDown(0.5);
 
       // ── Performa Kelompok ──
       const groupMap = new Map<string, { total: number; presentCount: number; lateCount: number; lateList: typeof lateList }>();
@@ -267,95 +352,40 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
         percent: data.total > 0 ? Math.round((data.presentCount / data.total) * 100) : 0,
       }));
 
+      sectionTitle('PERFORMA KELOMPOK');
       if (groupStats.length > 0) {
-        ensureSpace(50);
-        doc.fontSize(12).font('Helvetica-Bold').text('Performa Kelompok');
-        doc.moveDown(0.3);
-
-        const gTableTop = doc.y;
-        const gColWidths = [120, 60, 60, 80, 80];
-        const gHeaders = ['Kelompok', 'Total', 'Hadir', '% Kehadiran', 'Terlambat'];
-
-        doc.fontSize(9).font('Helvetica-Bold');
-        let gx = 40;
-        for (let i = 0; i < gHeaders.length; i++) {
-          doc.text(gHeaders[i], gx, gTableTop, { width: gColWidths[i], align: 'center' });
-          gx += gColWidths[i];
-        }
-
-        doc.font('Helvetica').fontSize(8);
-        for (let i = 0; i < groupStats.length; i++) {
-          const gs = groupStats[i];
-          const rowY = gTableTop + 15 + i * 14;
-          let rx = 40;
-          const vals = [gs.group, String(gs.total), String(gs.present), `${gs.percent}%`, String(gs.late)];
-          for (let j = 0; j < vals.length; j++) {
-            doc.text(vals[j], rx, rowY, { width: gColWidths[j], align: 'center' });
-            rx += gColWidths[j];
-          }
-        }
-        doc.y = gTableTop + 15 + groupStats.length * 14 + 10;
-        doc.moveDown(1);
+        drawTable(
+          ['Kelompok', 'Total', 'Hadir', 'Absen', '% Kehadiran', 'Terlambat'],
+          [165, 70, 70, 70, 70, 70],
+          groupStats.map((gs) => [gs.group, gs.total, gs.present, gs.total - gs.present, `${gs.percent}%`, gs.late]),
+          true,
+        );
+      } else {
+        doc.fontSize(9).font('Helvetica').fillColor('#6b7280').text('Belum ada data kelompok.', { align: 'center' });
+        doc.fillColor('#000000');
       }
+      doc.moveDown(0.5);
 
-      // ── Daftar Terlambat per Kelompok ──
-      const groupsWithLate = groupStats.filter((g) => g.late > 0);
-      if (groupsWithLate.length > 0) {
-        ensureSpace(40);
-        doc.fontSize(12).font('Helvetica-Bold').text('Daftar Terlambat per Kelompok');
-        doc.moveDown(0.3);
-
-        const lColWidths = [30, 150, 90, 90];
-        const lHeaders = ['No', 'Nama', 'ID', 'Durasi'];
-
-        for (const gs of groupsWithLate) {
-          const entry = groupMap.get(gs.group)!;
-          ensureSpace(60);
-          doc.fontSize(10).font('Helvetica-Bold').text(`Kelompok ${gs.group}`);
-          doc.moveDown(0.2);
-
-          let rowIndex = 0;
-          let displayNo = 0;
-          const drawLateHeader = () => {
-            const top = doc.y;
-            doc.fontSize(9).font('Helvetica-Bold');
-            let x = 40;
-            for (let k = 0; k < lHeaders.length; k++) {
-              doc.text(lHeaders[k], x, top, { width: lColWidths[k], align: 'center' });
-              x += lColWidths[k];
-            }
-            doc.font('Helvetica').fontSize(8);
-            return top;
-          };
-          let tableTop = drawLateHeader();
-
-          entry.lateList.forEach((log) => {
-            displayNo++;
-            const rowY = tableTop + 15 + rowIndex * 14;
-            if (rowY + 14 > BOTTOM_LIMIT) {
-              // Lanjut ke halaman baru + ulangi header kolom
-              doc.addPage();
-              tableTop = drawLateHeader();
-              rowIndex = 0;
-            }
-            const currentRowY = tableTop + 15 + rowIndex * 14;
-            let rx = 40;
-            const vals = [
-              String(displayNo),
-              log.participant?.name ?? 'Tanpa Nama',
-              log.participant?.id ?? log.participantId ?? 'N/A',
-              formatLateDuration(log.lateDuration),
-            ];
-            for (let j = 0; j < vals.length; j++) {
-              doc.text(vals[j], rx, currentRowY, { width: lColWidths[j], align: 'center' });
-              rx += lColWidths[j];
-            }
-            rowIndex++;
-          });
-          doc.y = tableTop + 15 + rowIndex * 14 + 6;
-          doc.moveDown(1);
-        }
+      // ── Daftar Terlambat ──
+      sectionTitle('DAFTAR TERLAMBAT');
+      if (lateList.length > 0) {
+        drawTable(
+          ['No', 'Nama', 'ID', 'Kelompok', 'Durasi'],
+          [35, 180, 120, 100, 80],
+          lateList.map((log, i) => [
+            String(i + 1),
+            log.participant?.name ?? 'Tanpa Nama',
+            log.participant?.id ?? log.participantId ?? 'N/A',
+            log.participant?.group ?? 'Tanpa Kelompok',
+            formatLateDuration(log.lateDuration),
+          ]),
+          true,
+        );
+      } else {
+        doc.fontSize(9).font('Helvetica').fillColor('#6b7280').text('Tidak ada peserta terlambat pada sesi ini.', { align: 'center' });
+        doc.fillColor('#000000');
       }
+      doc.moveDown(1);
     }
 
     doc.end();
