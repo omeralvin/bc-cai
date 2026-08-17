@@ -319,9 +319,6 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
         if (y > 740) { doc.addPage(); y = 40; }
       };
 
-      sectionHeader('USULAN PERMASALAHAN');
-      fieldRow('Usulan Permasalahan', r.usulanPermasalahan);
-
       sectionHeader('PROBLEM - PENYEBAB - SOLUSI');
       fieldRow('Problem', r.problem);
       fieldRow('Penyebab', r.penyebab);
