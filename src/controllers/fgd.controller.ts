@@ -235,17 +235,24 @@ function addTextLine(doc: PDFKit.PDFDocument, label: string, value: string, x: n
 export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { groupNumber } = req.params;
+    const sessionFilter = req.query.session as string | undefined;
 
-    let records;
+    const where: any = {};
     if (groupNumber) {
       const gn = parseInt(groupNumber);
       if (isNaN(gn)) return res.status(400).json({ message: 'Invalid group number' });
+      where.groupNumber = gn;
+    }
+    if (sessionFilter) where.sessionName = sessionFilter;
+
+    let records;
+    if (groupNumber) {
       records = await prisma.fgdMinute.findMany({
-        where: { groupNumber: gn },
+        where,
         orderBy: { sessionName: 'asc' },
       });
     } else {
-      records = await prisma.fgdMinute.findMany({ orderBy: [{ groupNumber: 'asc' }, { sessionName: 'asc' }] });
+      records = await prisma.fgdMinute.findMany({ where, orderBy: [{ groupNumber: 'asc' }, { sessionName: 'asc' }] });
     }
 
     if (records.length === 0) {
@@ -258,7 +265,11 @@ export const exportPdf = async (req: AuthenticatedRequest, res: Response) => {
     doc.on('end', () => {
       const pdfBuffer = Buffer.concat(chunks);
       res.setHeader('Content-Type', 'application/pdf');
-      const filename = groupNumber ? `notulis-grup-${groupNumber}.pdf` : 'notulis-semua-grup.pdf';
+      const filename = groupNumber
+        ? `notulis-grup-${groupNumber}${sessionFilter ? `-${sessionFilter.replace(/\s+/g, '-')}` : ''}.pdf`
+        : sessionFilter
+          ? `notulis-sesi-${sessionFilter.replace(/\s+/g, '-')}.pdf`
+          : 'notulis-semua-grup.pdf';
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.status(200).end(pdfBuffer);
     });
